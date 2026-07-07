@@ -1,0 +1,10 @@
+# local session state (created at runtime on the Windows target)
+.claude-sessions/
+*.log
+*.offset
+*.pid
+
+# editor / OS cruft
+.DS_Store
+Thumbs.db
+*.swp

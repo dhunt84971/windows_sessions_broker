@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+#
+# winctl - drive a persistent shell session on a remote Windows box over SSH.
+#
+# This is the Linux-side wrapper the Claude Code session (or you) calls. It is
+# the rough equivalent of talking to a tmux session, except the "session" lives
+# on a Windows target and is served by the broker in ../windows.
+#
+# Configuration (env vars, or ~/.config/winclaude/config which is sourced):
+#   WINBOX         user@host of the Windows target (required), e.g. dave@winbuild
+#   WINCLAUDE_DIR  install dir on the target (default: C:/claude-session)
+#   WINSSH_OPTS    extra ssh options (optional), e.g. "-p 2222 -i ~/.ssh/win"
+#
+# Usage:
+#   winctl start <name> [cmd|powershell|pwsh]   # create a detached session
+#   winctl send  <name> <command...>            # type a command + Enter
+#   winctl key   <name> <text...>               # send raw text, no Enter
+#   winctl read  <name> [-- <read-args...>]     # capture output (see below)
+#   winctl stop  <name>                         # kill the session
+#   winctl list                                 # list sessions
+#
+# read-args are passed through to session-read.ps1, e.g.:
+#   winctl read build                 # last 200 lines
+#   winctl read build -- -New         # only output since last -New read
+#   winctl read build -- -Wait 120 -New   # wait for idle, then new output
+#   winctl read build -- -All         # entire log
+#
+set -euo pipefail
+
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/winclaude/config"
+[ -f "$CONFIG" ] && . "$CONFIG"
+
+HOST="${WINBOX:-}"
+if [ -z "$HOST" ]; then
+  echo "winctl: set WINBOX=user@host (or put it in $CONFIG)" >&2
+  exit 2
+fi
+WDIR="${WINCLAUDE_DIR:-C:/claude-session}"
+# shellcheck disable=SC2206
+SSH_OPTS=(${WINSSH_OPTS:-})
+PS="powershell -NoProfile -ExecutionPolicy Bypass -File"
+
+_ssh() { ssh "${SSH_OPTS[@]}" "$HOST" "$@"; }
+
+# base64 (single line) so arbitrary command text survives the shell hops.
+_b64() { printf '%s' "$1" | base64 | tr -d '\n'; }
+
+sub="${1:-}"; shift || true
+case "$sub" in
+  start)
+    name="${1:?usage: winctl start <name> [shell]}"
+    shell="${2:-cmd}"
+    _ssh "$PS $WDIR/session-start.ps1 -Name $name -Shell $shell"
+    ;;
+  send)
+    name="${1:?usage: winctl send <name> <command...>}"; shift
+    b64=$(_b64 "$*")
+    _ssh "$PS $WDIR/session-send.ps1 -Name $name -Base64 $b64"
+    ;;
+  key)
+    name="${1:?usage: winctl key <name> <text...>}"; shift
+    b64=$(_b64 "$*")
+    _ssh "$PS $WDIR/session-send.ps1 -Name $name -Base64 $b64 -NoEnter"
+    ;;
+  read)
+    name="${1:?usage: winctl read <name> [-- <read-args>]}"; shift
+    # drop an optional leading "--" separator
+    [ "${1:-}" = "--" ] && shift
+    _ssh "$PS $WDIR/session-read.ps1 -Name $name $*"
+    ;;
+  stop)
+    name="${1:?usage: winctl stop <name>}"
+    _ssh "$PS $WDIR/session-stop.ps1 -Name $name"
+    ;;
+  list)
+    _ssh "$PS $WDIR/session-list.ps1"
+    ;;
+  *)
+    echo "usage: winctl {start|send|key|read|stop|list} ..." >&2
+    exit 2
+    ;;
+esac

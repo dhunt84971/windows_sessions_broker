@@ -60,30 +60,73 @@ CLAUDE.md   # guidance so a Claude session knows how to use winctl
 
 ## Install — Windows target (Windows 10)
 
-1. **Enable OpenSSH Server** (once, elevated PowerShell):
+> **Important:** installing OpenSSH via `Add-WindowsCapability` only lays down the
+> binaries and registers the service — it does **not** complete first-time setup.
+> You must also generate host keys, create `sshd_config`, and (the easy-to-miss
+> part) fix the **owner and permissions** on those files, or the service fails to
+> start. `install.ps1 -SetupSsh` does all of it for you; the manual steps and the
+> reasons are spelled out below and in [Troubleshooting](#troubleshooting).
+
+1. **Get the code onto the box** (clone the repo, or copy the `windows/` folder).
+
+2. **Run the installer from an *elevated* PowerShell** (from the `windows` folder):
 
    ```powershell
-   Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
-   Start-Service sshd
-   Set-Service -Name sshd -StartupType Automatic
-   # allow inbound 22 if your firewall blocks it:
-   New-NetFirewallRule -Name sshd -DisplayName 'OpenSSH Server' `
-     -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22
+   powershell -ExecutionPolicy Bypass -File .\install.ps1 -SetupSsh
    ```
 
-   Set up **key-based auth** from the Linux host so Claude never needs a password
+   `-SetupSsh` performs the full OpenSSH first-time setup **and** copies the broker
+   scripts to `C:\claude-session` (use `-InstallDir` to change it; match
+   `WINCLAUDE_DIR` on the Linux side). It is idempotent — safe to re-run.
+
+   Concretely, `-SetupSsh` does what the capability install skips:
+   1. installs the `OpenSSH.Server` capability if missing;
+   2. **generates host keys** (`ssh-keygen -A`);
+   3. **creates `sshd_config`** from `C:\Windows\System32\OpenSSH\sshd_config_default`;
+   4. **sets owner → `Administrators` and locks the DACL to `SYSTEM` + `Administrators`**
+      on the host keys and `sshd_config` (this is the step whose absence makes the
+      service die with exit code `1067`);
+   5. starts the service and sets it to **Automatic**;
+   6. opens the **firewall** for inbound TCP 22.
+
+3. **Set up key-based auth** from the Linux host so Claude never needs a password
    (see "Wire up SSH" below).
 
-2. **Get the code onto the box** (clone the repo, or copy the `windows/` folder).
+<details>
+<summary>Doing it by hand instead of <code>-SetupSsh</code></summary>
 
-3. **Install the broker scripts** (from the `windows` folder):
+Elevated PowerShell:
 
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\install.ps1 -CheckSsh
-   ```
+```powershell
+# 1. install the server
+Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 
-   This copies the scripts to `C:\claude-session`. Use `-InstallDir` to change it
-   (match `WINCLAUDE_DIR` on the Linux side).
+# 2. host keys (capability install skips these)
+& "$env:SystemRoot\System32\OpenSSH\ssh-keygen.exe" -A
+
+# 3. config from the template (capability install skips this too)
+Copy-Item "$env:SystemRoot\System32\OpenSSH\sshd_config_default" `
+          "$env:ProgramData\ssh\sshd_config" -Force
+
+# 4. OWNER + permissions — the step everyone misses. Files created by an admin
+#    user are owned by that user; sshd runs as LocalSystem and refuses host
+#    keys / config not owned by SYSTEM or the Administrators group.
+$secure = @("$env:ProgramData\ssh\sshd_config") +
+          (Get-ChildItem "$env:ProgramData\ssh\ssh_host_*" | ForEach-Object FullName)
+foreach ($f in $secure) {
+  icacls $f /setowner "BUILTIN\Administrators"
+  icacls $f /inheritance:r /grant:r "NT AUTHORITY\SYSTEM:(F)" "BUILTIN\Administrators:(F)"
+}
+
+# 5. start + enable
+Set-Service -Name sshd -StartupType Automatic
+Start-Service sshd
+
+# 6. firewall
+New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (sshd)' `
+  -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22
+```
+</details>
 
 > Notes: works with the built-in Windows PowerShell 5.1 — no extra runtime needed
 > (`Broker.cs` compiles via the .NET Framework compiler). PowerShell 7 also works.
@@ -155,6 +198,57 @@ Windows box in `C:\src\myapp`. Build it with `dotnet build`, read the output, an
 fix any errors."* `CLAUDE.md` in this repo tells the agent how to use `winctl`.
 
 ## Troubleshooting
+
+### The sshd service won't start
+
+Almost always a leftover from the incomplete capability install. `Start-Service sshd`
+gives a useless generic error, so diagnose from the bottom up:
+
+1. **Get the real reason, not the SCM wrapper error.** Run sshd by hand — it prints
+   the actual fatal line and (if healthy) stays listening:
+   ```powershell
+   & "$env:SystemRoot\System32\OpenSSH\sshd.exe" -d
+   ```
+   Common messages and fixes:
+   - `Permissions for 'ssh_host_ed25519_key' are too open` → a non-admin user has
+     an ACE on a private host key. Strip it (see step 4 of the manual setup).
+   - `__PROGRAMDATA__\ssh/sshd_config: No such file or directory` → config missing;
+     copy it from `sshd_config_default` (step 3).
+   - It prints `debug1:` lines and **sits there listening** → sshd is fine; the
+     problem is the *service*, continue below. (Press `Ctrl+C` to stop it, and make
+     sure no stray `sshd` is left holding port 22 before starting the service.)
+
+2. **Service exits with code `1067` (`ERROR_PROCESS_ABORTED`) and logs nothing**,
+   even though `sshd -d` works:
+   ```powershell
+   sc.exe query sshd    # WIN32_EXIT_CODE : 1067
+   ```
+   This is the **file-ownership** trap. `sshd -d` runs as *you* (an admin) and
+   passes the security check because you own the files; the service runs as
+   `LocalSystem`, which does not, so it aborts before it can log. Fix the owner:
+   ```powershell
+   $secure = @("$env:ProgramData\ssh\sshd_config") +
+             (Get-ChildItem "$env:ProgramData\ssh\ssh_host_*" | ForEach-Object FullName)
+   foreach ($f in $secure) {
+     icacls $f /setowner "BUILTIN\Administrators"
+     icacls $f /inheritance:r /grant:r "NT AUTHORITY\SYSTEM:(F)" "BUILTIN\Administrators:(F)"
+   }
+   ```
+
+3. **Still failing?** Turn on sshd's file logging (works in service mode) and read
+   the exact fatal:
+   ```powershell
+   New-Item -ItemType Directory -Force -Path "$env:ProgramData\ssh\logs" | Out-Null
+   Add-Content "$env:ProgramData\ssh\sshd_config" "`nSyslogFacility LOCAL0`nLogLevel DEBUG3"
+   Start-Service sshd -ErrorAction SilentlyContinue
+   Start-Sleep 2
+   Get-Content "$env:ProgramData\ssh\logs\sshd.log" -Tail 60
+   ```
+
+Running `install.ps1 -SetupSsh` from the start avoids all of the above — it sets
+the host keys, config, ownership, and permissions correctly in one shot.
+
+### Broker / winctl
 
 - **`session '<name>' is not running`** — the broker isn't up. `winctl start` it;
   check `winctl list`.

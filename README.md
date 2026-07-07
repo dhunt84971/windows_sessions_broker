@@ -47,6 +47,7 @@ windows/    # copy to the Windows target (installed to C:\claude-session)
   session-start.ps1   create a detached session         (~ tmux new -d)
   session-send.ps1    send input                         (~ send-keys)
   session-read.ps1    read output                        (~ capture-pane)
+  session-watch.ps1   live-tail a session                (~ tmux attach, read-only)
   session-stop.ps1    kill a session                     (~ kill-session)
   session-list.ps1    list sessions                      (~ tmux ls)
   install.ps1         copy scripts into the install dir
@@ -185,6 +186,7 @@ winctl start ps powershell      # or a PowerShell session
 winctl send build "cd C:\src\myapp"
 winctl send build "dotnet build -c Release"
 winctl read build -- -Wait 300 -New   # wait for the build to go idle, show new output
+winctl watch build              # live-tail the session (Ctrl-C to stop)
 
 winctl send build "\"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat\""
 winctl send build "cl /EHsc main.cpp"
@@ -220,8 +222,16 @@ For a headless session with no window (and no dependency on a logged-in user), a
 winctl start build cmd --hidden
 ```
 
-To watch a session from anywhere — including when a window can't be shown — tail
-its log instead. On Windows:
+To watch a session from the Linux host — including when a window can't be shown —
+live-tail it with `winctl watch` (Ctrl-C to stop). This works regardless of Windows
+desktop session isolation, so it's the most reliable way to see activity:
+
+```bash
+winctl watch build            # stream new output as it appears
+winctl watch build 100        # begin by showing the last 100 lines
+```
+
+Or tail the log directly on Windows:
 
 ```powershell
 Get-Content "$env:USERPROFILE\.claude-sessions\build\output.log" -Wait

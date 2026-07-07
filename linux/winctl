@@ -18,6 +18,7 @@
 #   winctl send  <name> <command...>            # type a command + Enter
 #   winctl key   <name> <text...>               # send raw text, no Enter
 #   winctl read  <name> [-- <read-args...>]     # capture output (see below)
+#   winctl watch <name> [lines]                 # live-tail output (Ctrl-C to stop)
 #   winctl stop  <name>                         # kill the session
 #   winctl list                                 # list sessions
 #
@@ -76,6 +77,14 @@ case "$sub" in
     [ "${1:-}" = "--" ] && shift
     _ssh "$PS $WDIR/session-read.ps1 -Name $name $*"
     ;;
+  watch)
+    name="${1:?usage: winctl watch <name> [lines]}"; shift
+    lines="${1:-40}"
+    # allocate a tty only when run interactively, so Ctrl-C cleanly tears down
+    # the remote tail; skip it when driven non-interactively (e.g. by an agent).
+    tflag=(); [ -t 0 ] && tflag=(-t)
+    ssh "${tflag[@]}" "${SSH_OPTS[@]}" "$HOST" "$PS $WDIR/session-watch.ps1 -Name $name -Tail $lines"
+    ;;
   stop)
     name="${1:?usage: winctl stop <name>}"
     _ssh "$PS $WDIR/session-stop.ps1 -Name $name"
@@ -84,7 +93,7 @@ case "$sub" in
     _ssh "$PS $WDIR/session-list.ps1"
     ;;
   *)
-    echo "usage: winctl {start|send|key|read|stop|list} ..." >&2
+    echo "usage: winctl {start|send|key|read|watch|stop|list} ..." >&2
     exit 2
     ;;
 esac

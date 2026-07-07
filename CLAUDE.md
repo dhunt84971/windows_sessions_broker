@@ -19,6 +19,9 @@ environment (including `vcvars`), and running jobs alive between calls.
 - `winctl read <name> -- -Wait <sec> -New` — block until output goes idle (or the
   timeout hits), then show new output. Use this after kicking off a build to avoid
   polling in a tight loop.
+- `winctl watch <name> [lines]` — live-tail the session. **Blocks until Ctrl-C** —
+  it's for a human watching. As an agent, do **not** use `watch` (it will hang);
+  use `read -- -New` or `read -- -Wait <sec> -New` instead.
 - `winctl stop <name>` — kill the session.
 
 ## Working pattern

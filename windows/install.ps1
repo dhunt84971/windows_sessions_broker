@@ -111,7 +111,7 @@ elseif ($CheckSsh) {
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 $files = @(
   'Broker.cs','session-server.ps1','session-start.ps1','session-send.ps1',
-  'session-read.ps1','session-stop.ps1','session-list.ps1'
+  'session-read.ps1','session-watch.ps1','session-stop.ps1','session-list.ps1'
 )
 foreach ($f in $files) {
   Copy-Item -Path (Join-Path $PSScriptRoot $f) -Destination $InstallDir -Force

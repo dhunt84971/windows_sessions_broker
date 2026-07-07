@@ -171,6 +171,13 @@ user's keys go in `%USERPROFILE%\.ssh\authorized_keys`.
 
 ## Usage
 
+> **Run all `winctl` commands on the Linux host** (the machine running your Claude
+> session) — **not** on the Windows box. `winctl` is a Linux/bash tool that reaches
+> into Windows over SSH and invokes the `session-*.ps1` scripts there for you. If
+> you type `winctl` in a Windows PowerShell prompt it won't be found. (To exercise
+> the broker directly on Windows without SSH, call the `session-*.ps1` scripts in
+> `C:\claude-session` yourself — see [Troubleshooting](#broker--winctl).)
+
 ```bash
 winctl start build              # create a detached cmd session named "build"
 winctl start ps powershell      # or a PowerShell session
@@ -250,6 +257,21 @@ the host keys, config, ownership, and permissions correctly in one shot.
 
 ### Broker / winctl
 
+- **Smoke-test the broker on Windows without SSH.** To isolate broker problems
+  from SSH problems, run the scripts directly on the Windows box (elevated not
+  required):
+  ```powershell
+  cd C:\claude-session
+  .\session-start.ps1 -Name build -Shell cmd
+  .\session-send.ps1  -Name build -Text "cd C:\ && dir"
+  Start-Sleep 1
+  .\session-read.ps1  -Name build
+  ```
+  A prompt banner + directory listing means the broker half works; anything left
+  is SSH/`winctl` wiring.
+- **`winctl: command not found`** — you're either on the Windows box (it's a
+  Linux-side tool) or `~/.local/bin` isn't on your `PATH`. Run `linux/install.sh`
+  on the Linux host and ensure the bin dir is on `PATH`.
 - **`session '<name>' is not running`** — the broker isn't up. `winctl start` it;
   check `winctl list`.
 - **Session dies right after `start`** — some OpenSSH setups kill detached

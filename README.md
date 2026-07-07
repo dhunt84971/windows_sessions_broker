@@ -1,8 +1,8 @@
 # windows-session-broker
 
 Drive a **persistent Windows shell session** from a Claude Code session (or any
-shell) running on **Linux**, over SSH — the way you'd hand a Claude agent a
-named `tmux` session on Linux and let it work.
+shell) running on **Linux**, over SSH — the same way a Claude agent is handed a
+named `tmux` session on Linux and left to work.
 
 On Linux the trick that makes the tmux workflow work is that Claude never really
 "attaches" to tmux; it just runs `tmux send-keys` to type and `tmux capture-pane`
@@ -34,8 +34,8 @@ full pseudo-console (ConPTY). So:
 - ✅ Kick off long builds and poll for completion (`read -Wait`)
 - ⚠️ Full-screen TUI apps won't render; true Ctrl-C signal delivery is limited
 
-That's the right fit for MSVC / `dotnet` / `cmake` builds and running your apps.
-The broker core (`Broker.cs`) is isolated, so it can later be swapped for a
+That is the right fit for MSVC / `dotnet` / `cmake` builds and running the built
+apps. The broker core (`Broker.cs`) is isolated, so it can later be swapped for a
 ConPTY implementation without changing the `winctl` interface.
 
 ## Layout
@@ -51,7 +51,7 @@ windows/    # copy to the Windows target (installed to C:\claude-session)
   session-list.ps1    list sessions                      (~ tmux ls)
   install.ps1         copy scripts into the install dir
 linux/      # install on the Linux host running Claude Code
-  winctl              the wrapper Claude/you call
+  winctl              the wrapper Claude (or an operator) calls
   install.sh          symlink winctl onto PATH + scaffold config
 CLAUDE.md   # guidance so a Claude session knows how to use winctl
 ```
@@ -62,10 +62,10 @@ CLAUDE.md   # guidance so a Claude session knows how to use winctl
 
 > **Important:** installing OpenSSH via `Add-WindowsCapability` only lays down the
 > binaries and registers the service — it does **not** complete first-time setup.
-> You must also generate host keys, create `sshd_config`, and (the easy-to-miss
-> part) fix the **owner and permissions** on those files, or the service fails to
-> start. `install.ps1 -SetupSsh` does all of it for you; the manual steps and the
-> reasons are spelled out below and in [Troubleshooting](#troubleshooting).
+> Host keys must be generated, `sshd_config` created, and (the easy-to-miss part)
+> the **owner and permissions** on those files fixed, or the service fails to
+> start. `install.ps1 -SetupSsh` does all of it; the manual steps and the reasons
+> are spelled out below and in [Troubleshooting](#troubleshooting).
 
 1. **Get the code onto the box** (clone the repo, or copy the `windows/` folder).
 
@@ -89,7 +89,7 @@ CLAUDE.md   # guidance so a Claude session knows how to use winctl
    5. starts the service and sets it to **Automatic**;
    6. opens the **firewall** for inbound TCP 22.
 
-3. **Set up key-based auth** from the Linux host so Claude never needs a password
+3. **Set up key-based auth** from the Linux host so no password is needed
    (see "Wire up SSH" below).
 
 <details>
@@ -108,7 +108,7 @@ Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 Copy-Item "$env:SystemRoot\System32\OpenSSH\sshd_config_default" `
           "$env:ProgramData\ssh\sshd_config" -Force
 
-# 4. OWNER + permissions — the step everyone misses. Files created by an admin
+# 4. OWNER + permissions — the step most setups miss. Files created by an admin
 #    user are owned by that user; sshd runs as LocalSystem and refuses host
 #    keys / config not owned by SYSTEM or the Administrators group.
 $secure = @("$env:ProgramData\ssh\sshd_config") +
@@ -131,36 +131,36 @@ New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (
 > Notes: works with the built-in Windows PowerShell 5.1 — no extra runtime needed
 > (`Broker.cs` compiles via the .NET Framework compiler). PowerShell 7 also works.
 > To build with MSVC in a session, start a `cmd` session and `send` the path to
-> your `vcvars64.bat` first; the environment then persists for the session.
+> `vcvars64.bat` first; the environment then persists for the rest of the session.
 
 ## Install — Linux host (the Claude Code machine)
 
 1. **Get the code** and run the installer:
 
    ```bash
-   git clone <your-fork-url> windows-session-broker
+   git clone <repo-url> windows-session-broker
    cd windows-session-broker/linux
    ./install.sh                 # symlinks winctl into ~/.local/bin
    ```
 
-2. **Point it at your Windows box** — edit `~/.config/winclaude/config`:
+2. **Point it at the Windows box** — edit `~/.config/winclaude/config`:
 
    ```sh
-   WINBOX=dave@winbuild            # user@host of the Windows target
+   WINBOX=user@windows-host        # user@host of the Windows target
    WINCLAUDE_DIR=C:/claude-session # must match the Windows install dir
    # WINSSH_OPTS="-p 22 -i ~/.ssh/id_ed25519"
    ```
 
-   (Or just `export WINBOX=...` in your shell; the config file is optional.)
+   (Alternatively, `export WINBOX=...` in the shell; the config file is optional.)
 
 ### Wire up SSH (passwordless)
 
 From the Linux host:
 
 ```bash
-ssh-keygen -t ed25519           # if you don't have a key
-ssh-copy-id dave@winbuild       # or paste the pubkey into the Windows authorized_keys
-ssh dave@winbuild "powershell -c 'hostname'"   # verify it works without a password
+ssh-keygen -t ed25519           # if no key exists yet
+ssh-copy-id user@windows-host   # or paste the pubkey into the Windows authorized_keys
+ssh user@windows-host "powershell -c 'hostname'"   # verify it works without a password
 ```
 
 On Windows, an **administrator** account's keys go in
@@ -171,12 +171,12 @@ user's keys go in `%USERPROFILE%\.ssh\authorized_keys`.
 
 ## Usage
 
-> **Run all `winctl` commands on the Linux host** (the machine running your Claude
+> **Run all `winctl` commands on the Linux host** (the machine running the Claude
 > session) — **not** on the Windows box. `winctl` is a Linux/bash tool that reaches
-> into Windows over SSH and invokes the `session-*.ps1` scripts there for you. If
-> you type `winctl` in a Windows PowerShell prompt it won't be found. (To exercise
+> into Windows over SSH and invokes the `session-*.ps1` scripts there. Typing
+> `winctl` at a Windows PowerShell prompt will fail with "not found". (To exercise
 > the broker directly on Windows without SSH, call the `session-*.ps1` scripts in
-> `C:\claude-session` yourself — see [Troubleshooting](#broker--winctl).)
+> `C:\claude-session` directly — see [Troubleshooting](#broker--winctl).)
 
 ```bash
 winctl start build              # create a detached cmd session named "build"
@@ -199,10 +199,10 @@ is idle or S seconds pass, then read).
 
 ### Handing it to Claude
 
-Same as your tmux flow: start and log in the session yourself, then tell the
-agent the session name and the task, e.g. *"Session `build` is a cmd shell on the
-Windows box in `C:\src\myapp`. Build it with `dotnet build`, read the output, and
-fix any errors."* `CLAUDE.md` in this repo tells the agent how to use `winctl`.
+Same as the tmux flow: start and log in the session first, then give the agent the
+session name and the task, e.g. *"Session `build` is a cmd shell on the Windows box
+in `C:\src\myapp`. Build it with `dotnet build`, read the output, and fix any
+errors."* `CLAUDE.md` in this repo tells the agent how to use `winctl`.
 
 ## Troubleshooting
 
@@ -230,8 +230,8 @@ gives a useless generic error, so diagnose from the bottom up:
    ```powershell
    sc.exe query sshd    # WIN32_EXIT_CODE : 1067
    ```
-   This is the **file-ownership** trap. `sshd -d` runs as *you* (an admin) and
-   passes the security check because you own the files; the service runs as
+   This is the **file-ownership** trap. `sshd -d` runs as the invoking admin and
+   passes the security check because that admin owns the files; the service runs as
    `LocalSystem`, which does not, so it aborts before it can log. Fix the owner:
    ```powershell
    $secure = @("$env:ProgramData\ssh\sshd_config") +
@@ -258,7 +258,7 @@ the host keys, config, ownership, and permissions correctly in one shot.
 ### Broker / winctl
 
 - **Smoke-test the broker on Windows without SSH.** To isolate broker problems
-  from SSH problems, run the scripts directly on the Windows box (elevated not
+  from SSH problems, run the scripts directly on the Windows box (elevation not
   required):
   ```powershell
   cd C:\claude-session
@@ -269,17 +269,17 @@ the host keys, config, ownership, and permissions correctly in one shot.
   ```
   A prompt banner + directory listing means the broker half works; anything left
   is SSH/`winctl` wiring.
-- **`winctl: command not found`** — you're either on the Windows box (it's a
-  Linux-side tool) or `~/.local/bin` isn't on your `PATH`. Run `linux/install.sh`
+- **`winctl: command not found`** — either it is being run on the Windows box (it
+  is a Linux-side tool), or `~/.local/bin` is not on `PATH`. Run `linux/install.sh`
   on the Linux host and ensure the bin dir is on `PATH`.
 - **`session '<name>' is not running`** — the broker isn't up. `winctl start` it;
   check `winctl list`.
 - **Session dies right after `start`** — some OpenSSH setups kill detached
-  children when the SSH channel closes. If `Start-Process` doesn't survive on your
-  box, run the server via Task Scheduler instead (see comments in
+  children when the SSH channel closes. If `Start-Process` does not survive on a
+  given box, run the server via Task Scheduler instead (see comments in
   `session-start.ps1`) or launch it from an interactive session on the desktop.
 - **Garbled/box characters in output** — encoding mismatch. `cmd` sessions run
   `chcp 65001` automatically; if a specific tool insists on another codepage,
   `send` its `chcp` first.
-- **No output after a command** — give it a moment and `read` again, or use
+- **No output after a command** — allow a moment and `read` again, or use
   `read -- -Wait <sec> -New`; the log is written asynchronously.

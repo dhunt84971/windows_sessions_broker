@@ -4,9 +4,9 @@
 
 .DESCRIPTION
   Compiles Broker.cs and runs the broker, which spawns a persistent child
-  shell and blocks until it exits. You normally do NOT run this directly --
-  use session-start.ps1, which launches this hidden and detached so it
-  survives the SSH command that started it.
+  shell and blocks until it exits. Not normally run directly -- use
+  session-start.ps1, which launches this hidden and detached so it survives
+  the SSH command that started it.
 #>
 param(
   [Parameter(Mandatory)][string]$Name,

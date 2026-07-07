@@ -2,12 +2,12 @@
 #
 # winctl - drive a persistent shell session on a remote Windows box over SSH.
 #
-# This is the Linux-side wrapper the Claude Code session (or you) calls. It is
+# This is the Linux-side wrapper the Claude Code session (or an operator) calls. It is
 # the rough equivalent of talking to a tmux session, except the "session" lives
 # on a Windows target and is served by the broker in ../windows.
 #
 # Configuration (env vars, or ~/.config/winclaude/config which is sourced):
-#   WINBOX         user@host of the Windows target (required), e.g. dave@winbuild
+#   WINBOX         user@host of the Windows target (required), e.g. user@windows-host
 #   WINCLAUDE_DIR  install dir on the target (default: C:/claude-session)
 #   WINSSH_OPTS    extra ssh options (optional), e.g. "-p 2222 -i ~/.ssh/win"
 #

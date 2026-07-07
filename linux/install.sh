@@ -36,7 +36,7 @@ echo "Installed winctl -> $BINDIR/winctl"
 
 case ":$PATH:" in
   *":$BINDIR:"*) ;;
-  *) echo "NOTE: $BINDIR is not on your PATH. Add it, e.g.:"
+  *) echo "NOTE: $BINDIR is not on PATH. Add it, e.g.:"
      echo "  echo 'export PATH=\"$BINDIR:\$PATH\"' >> ~/.bashrc" ;;
 esac
 
@@ -53,7 +53,7 @@ WINCLAUDE_DIR=C:/claude-session
 # Extra ssh options (optional), e.g. custom port or key:
 # WINSSH_OPTS="-p 22 -i ~/.ssh/id_ed25519"
 EOF
-  echo "Wrote starter config: $CONFIG  (edit WINBOX to point at your Windows box)"
+  echo "Wrote starter config: $CONFIG  (edit WINBOX to point at the Windows target)"
 else
   echo "Config already exists: $CONFIG (left unchanged)"
 fi

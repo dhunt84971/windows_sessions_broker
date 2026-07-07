@@ -12,7 +12,9 @@
 #   WINSSH_OPTS    extra ssh options (optional), e.g. "-p 2222 -i ~/.ssh/win"
 #
 # Usage:
-#   winctl start <name> [cmd|powershell|pwsh]   # create a detached session
+#   winctl start <name> [cmd|powershell|pwsh] [--hidden]  # create a session
+#                                               # (visible window by default;
+#                                               #  --hidden = headless/detached)
 #   winctl send  <name> <command...>            # type a command + Enter
 #   winctl key   <name> <text...>               # send raw text, no Enter
 #   winctl read  <name> [-- <read-args...>]     # capture output (see below)
@@ -48,9 +50,15 @@ _b64() { printf '%s' "$1" | base64 | tr -d '\n'; }
 sub="${1:-}"; shift || true
 case "$sub" in
   start)
-    name="${1:?usage: winctl start <name> [shell]}"
-    shell="${2:-cmd}"
-    _ssh "$PS $WDIR/session-start.ps1 -Name $name -Shell $shell"
+    name="${1:?usage: winctl start <name> [shell] [--hidden]}"; shift
+    shell="cmd"; extra=""
+    for a in "$@"; do
+      case "$a" in
+        --hidden|hidden) extra="-Hidden" ;;
+        *) shell="$a" ;;
+      esac
+    done
+    _ssh "$PS $WDIR/session-start.ps1 -Name $name -Shell $shell $extra"
     ;;
   send)
     name="${1:?usage: winctl send <name> <command...>}"; shift

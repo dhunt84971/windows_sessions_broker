@@ -29,4 +29,7 @@ if (-not $sent) {
   }
 }
 
+# Remove the scheduled task used for visible (SSH-launched) sessions, if any.
+Unregister-ScheduledTask -TaskName "claude-session-$Name" -Confirm:$false -ErrorAction SilentlyContinue
+
 Write-Host "stopped session '$Name'"

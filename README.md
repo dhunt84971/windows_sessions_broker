@@ -197,6 +197,36 @@ winctl stop build               # tear it down
 (last N lines, default 200), `-All` (whole log), `-Wait S` (block until output
 is idle or S seconds pass, then read).
 
+### Seeing the session window
+
+By default a session opens a **visible PowerShell/cmd window** on the Windows
+target showing the shell's live output, so its activity can be watched directly.
+
+Because a process launched over SSH runs in the SSH logon session (not the
+interactive desktop), `winctl start` detects the SSH context and routes the launch
+into the **active console session** via a one-shot scheduled task, so the window
+appears on the desktop of the logged-in user. Caveats:
+
+- The **same user** used for SSH must be **logged in at the console (or RDP)** for
+  the window to have a desktop to appear on.
+- Registering the scheduled task may require the SSH user to be an administrator.
+- The window is a **read-only live view** — typing in it does nothing; drive the
+  session with `winctl send` / `winctl read`.
+
+For a headless session with no window (and no dependency on a logged-in user), add
+`--hidden`:
+
+```bash
+winctl start build cmd --hidden
+```
+
+To watch a session from anywhere — including when a window can't be shown — tail
+its log instead. On Windows:
+
+```powershell
+Get-Content "$env:USERPROFILE\.claude-sessions\build\output.log" -Wait
+```
+
 ### Handing it to Claude
 
 Same as the tmux flow: start and log in the session first, then give the agent the
@@ -274,10 +304,15 @@ the host keys, config, ownership, and permissions correctly in one shot.
   on the Linux host and ensure the bin dir is on `PATH`.
 - **`session '<name>' is not running`** — the broker isn't up. `winctl start` it;
   check `winctl list`.
-- **Session dies right after `start`** — some OpenSSH setups kill detached
-  children when the SSH channel closes. If `Start-Process` does not survive on a
-  given box, run the server via Task Scheduler instead (see comments in
-  `session-start.ps1`) or launch it from an interactive session on the desktop.
+- **Session dies right after `start`** — mostly affects `--hidden` sessions, which
+  launch via `Start-Process`; some OpenSSH setups kill detached children when the
+  SSH channel closes. The default (visible) launch runs via a scheduled task and is
+  immune to this. If a hidden session won't stay up, start it visibly, or launch
+  the server from an interactive session on the desktop.
+- **No window appears for a visible session** — the SSH user isn't logged in at the
+  console/RDP (a window needs a desktop), or the scheduled-task registration needs
+  admin. Tail `output.log` to watch instead (see "Seeing the session window"), or
+  use `--hidden` if a window isn't needed.
 - **Garbled/box characters in output** — encoding mismatch. `cmd` sessions run
   `chcp 65001` automatically; if a specific tool insists on another codepage,
   `send` its `chcp` first.

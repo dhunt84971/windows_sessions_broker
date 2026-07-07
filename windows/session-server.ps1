@@ -47,4 +47,8 @@ switch ($Shell) {
   }
 }
 
+Write-Host "=== claude session '$Name' ($Shell) - live output ==="
+Write-Host "(read-only view; drive the session with 'winctl send' / 'winctl read')"
+Write-Host ""
+
 [ClaudeSession.Broker]::Run($Name, $path, $shArgs, $dir, $initCmd)

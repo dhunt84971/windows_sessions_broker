@@ -73,7 +73,12 @@ namespace ClaudeSession {
     }
 
     static void Write(string s) {
-      lock (logLock) { log.WriteLine(s); }
+      lock (logLock) {
+        log.WriteLine(s);
+        // Also echo to the server process's console so a visible session
+        // window shows live output. No-op/harmless when the window is hidden.
+        try { Console.Out.WriteLine(s); } catch { }
+      }
     }
 
     static void PipeLoop(string pipeName) {
